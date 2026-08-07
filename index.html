@@ -15,7 +15,7 @@ tailwind.config = {
       "surface-variant":"#32353c","on-surface":"#e1e2eb","on-surface-variant":"#d4c0d7","outline":"#9d8ba0",
       "primary":"#ecb2ff","primary-fixed":"#f8d8ff","primary-container":"#bd00ff",
       "secondary":"#7df4ff","secondary-bright":"#00eefc",
-      "tertiary":"#ffb1c3","tertiary-container":"#e7006e"
+      "tertiary":"#ffb1c3","tertiary-container":"#e7006e","gold":"#ffd166"
     },
     fontFamily: { sora:["Sora"], body:["Hanken Grotesk"], mono:["JetBrains Mono"] }
   } }
@@ -27,6 +27,9 @@ tailwind.config = {
   .neon-glow-primary { box-shadow:0 0 24px rgba(236,178,255,0.3); }
   .neon-glow-secondary { box-shadow:0 0 24px rgba(125,244,255,0.3); }
   .neon-glow-tertiary { box-shadow:0 0 24px rgba(255,177,195,0.3); }
+  .neon-glow-gold { box-shadow:0 0 24px rgba(255,209,102,0.3); }
+  @keyframes spin { to{transform:rotate(360deg)} }
+  .spinner { width:36px;height:36px;border-radius:9999px;border:3px solid rgba(255,255,255,.15);border-top-color:#ecb2ff;animation:spin .8s linear infinite; }
   .material-symbols-outlined { font-variation-settings:'FILL' 0; }
   .msf { font-variation-settings:'FILL' 1 !important; }
   .screen { position:fixed; inset:0; display:flex; flex-direction:column; background:#10131a; transition:transform .45s cubic-bezier(.32,.72,.35,1), opacity .45s; }
@@ -117,7 +120,8 @@ tailwind.config = {
 const VOCALS = {
   tugce:  { name:'Tuğçe',  ini:'T', color:'#ecb2ff', glow:'neon-glow-primary',  txt:'text-primary',  border:'border-primary',  grad:'from-[#bd00ff]/60 via-[#520071]/40' },
   mevsim: { name:'Mevsim', ini:'M', color:'#7df4ff', glow:'neon-glow-secondary', txt:'text-secondary', border:'border-secondary', grad:'from-[#00b8c4]/60 via-[#004f54]/40' },
-  zeynep: { name:'Zeynep', ini:'Z', color:'#ffb1c3', glow:'neon-glow-tertiary', txt:'text-tertiary', border:'border-tertiary', grad:'from-[#e7006e]/60 via-[#66002c]/40' }
+  zeynep: { name:'Zeynep', ini:'Z', color:'#ffb1c3', glow:'neon-glow-tertiary', txt:'text-tertiary', border:'border-tertiary', grad:'from-[#e7006e]/60 via-[#66002c]/40' },
+  orkestra: { name:'Orkestra', ini:'🎸', color:'#ffd166', glow:'neon-glow-gold', txt:'text-gold', border:'border-gold', grad:'from-[#b8860b]/60 via-[#5c4300]/40' }
 };
 const SONGS = [
   {id:'son-arzum', t:'Son Arzum', o:['tugce','zeynep']},
@@ -198,7 +202,8 @@ const SONGS = [
   {id:'tutamiyorum-zamani', t:'Tutamıyorum Zamanı', k:'Dm', o:['mevsim']},
   {id:'mesafe', t:'Mesafe', k:'Dm', o:['mevsim']}
 ];
-const SONG_BY_ID = Object.fromEntries(SONGS.map(s=>[s.id,s]));
+const SONG_BY_ID = {}; SONGS.forEach(function(s){ SONG_BY_ID[s.id]=s; });
+const PERSONAS = Object.keys(VOCALS).length;
 
 /* ── DURUM ────────────────────────────────────────── */
 const API_BASE = 'https://n8n.srv1137131.hstgr.cloud/webhook/repertuvar';
@@ -215,19 +220,57 @@ function setVoteLocal(voter,songId,liked){
   const i=votes.findIndex(v=>v.voter===voter&&v.song_id===songId);
   if(i>=0) votes[i].liked=liked; else votes.push({voter, song_id:songId, liked});
 }
+function fetchTimeout(url, opts, ms){
+  return new Promise(function(resolve,reject){
+    var ctrl = ('AbortController' in window) ? new AbortController() : null;
+    var t = setTimeout(function(){ if(ctrl) ctrl.abort(); reject(new Error('timeout')); }, ms||12000);
+    fetch(url, Object.assign({}, opts, ctrl?{signal:ctrl.signal}:{}))
+      .then(function(r){ clearTimeout(t); resolve(r); })
+      .catch(function(e){ clearTimeout(t); reject(e); });
+  });
+}
+function queueAll(){ try{ return JSON.parse(localStorage.getItem('rep_queue')||'[]'); }catch(e){ return []; } }
+function queueSave(q){ try{ localStorage.setItem('rep_queue', JSON.stringify(q)); }catch(e){} }
+function queuePush(p){
+  var q=queueAll().filter(function(x){ return !(x.voter===p.voter && x.song_id===p.song_id); });
+  q.push(p); queueSave(q);
+}
+var flushing=false;
+async function flushQueue(){
+  if(flushing) return; flushing=true;
+  try{
+    var q=queueAll();
+    if(!q.length) return;
+    var rest=[];
+    for(var i=0;i<q.length;i++){
+      try{
+        var r=await fetchTimeout(API_BASE+'-oy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(q[i])},12000);
+        if(!r.ok) throw new Error('http');
+      }catch(e){ rest.push(q[i]); }
+    }
+    queueSave(rest);
+    if(!rest.length) toast('Bekleyen oylar gönderildi ✓');
+  } finally { flushing=false; }
+}
 async function loadVotes(){
   try{
-    const r=await fetch(API_BASE+'-oylar',{cache:'no-store'});
+    const r=await fetchTimeout(API_BASE+'-oylar',{cache:'no-store'},12000);
+    if(!r.ok) throw new Error('http');
     const j=await r.json();
     votes = (j.votes||[]).map(v=>({voter:v.voter, song_id:v.song_id, liked:v.liked===true||v.liked==='true'}));
-  }catch(e){ toast('Bağlantı sorunu — oylar yüklenemedi'); }
+    queueAll().forEach(function(p){ setVoteLocal(p.voter,p.song_id,p.liked); });
+    flushQueue();
+    return true;
+  }catch(e){ return false; }
 }
 function sendVote(songId,liked){
   setVoteLocal(me,songId,liked);
-  fetch(API_BASE+'-oy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({voter:me,song_id:songId,liked})})
-    .catch(()=>fetch(API_BASE+'-oy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({voter:me,song_id:songId,liked})}))
-    .catch(()=>toast('Oy gönderilemedi — internetini kontrol et'));
+  var p={voter:me,song_id:songId,liked:liked};
+  fetchTimeout(API_BASE+'-oy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)},12000)
+    .then(function(r){ if(!r.ok) throw new Error('http'); flushQueue(); })
+    .catch(function(){ queuePush(p); toast('Bağlantı zayıf — oyun telefonda saklandı, otomatik gönderilecek'); });
 }
+window.addEventListener('online', function(){ flushQueue(); });
 
 /* ── EKRAN GEÇİŞİ ─────────────────────────────────── */
 function showScreen(name){
@@ -263,17 +306,42 @@ function renderProfiles(){
         </div>
         <div class="flex-1 text-left">
           <h3 class="font-sora text-2xl font-semibold text-on-surface">${v.name}</h3>
-          <p class="font-mono text-xs ${v.txt}">${SONGS.filter(s=>s.o.includes(id)).length} şarkı · Vokal</p>
+          <p class="font-mono text-xs ${v.txt}">${id==='orkestra' ? SONGS.length+' şarkı · Tüm liste' : SONGS.filter(s=>s.o.includes(id)).length+' şarkı · Vokal'}</p>
         </div>
         <span class="material-symbols-outlined text-on-surface-variant">chevron_right</span>
       </div>
     </button>`).join('');
 }
-async function pickProfile(id){
+function pickProfile(id){
   me=id; localStorage.setItem('rep_kimlik',id); updateHeader();
   toast(`Hoş geldin ${VOCALS[id].name}! 🎤`);
-  await loadVotes();
-  buildDeck(); renderDeck(); showScreen('oylama');
+  showScreen('oylama');
+  initDeck();
+}
+function renderLoading(){
+  document.getElementById('deck-progress').textContent='';
+  document.getElementById('btn-undo').style.visibility='hidden';
+  document.getElementById('card-deck').innerHTML=`<div class="glass-panel rounded-[24px] p-8 text-center max-w-sm popin flex flex-col items-center gap-4">
+    <div class="spinner"></div>
+    <p class="text-on-surface-variant">Oylar yükleniyor…</p>
+  </div>`;
+}
+function renderRetry(){
+  document.getElementById('card-deck').innerHTML=`<div class="glass-panel rounded-[24px] p-8 text-center max-w-sm popin">
+    <span class="material-symbols-outlined text-tertiary text-[40px] mb-2">wifi_off</span>
+    <h2 class="font-sora text-xl font-bold text-white mb-2">Sunucuya ulaşılamadı</h2>
+    <p class="text-on-surface-variant text-sm mb-6">İnternet bağlantını kontrol edip tekrar dene. Wi-Fi'da olmuyorsa mobil veriyle dene (ya da tersi).</p>
+    <div class="flex flex-col gap-3">
+      <button class="glass-panel rounded-full px-6 py-3 text-primary font-sora font-semibold neon-glow-primary" onclick="initDeck()">Tekrar Dene</button>
+      <button class="rounded-full px-6 py-2 text-on-surface-variant font-mono text-xs" onclick="buildDeck();renderDeck();toast('Çevrimdışı mod — oyların telefonda birikecek')">Yine de başla (çevrimdışı)</button>
+    </div>
+  </div>`;
+}
+async function initDeck(){
+  renderLoading();
+  const ok=await loadVotes();
+  if(!ok && !votes.length){ renderRetry(); return; }
+  buildDeck(); renderDeck();
 }
 
 /* ── EKRAN 2: DESTE ───────────────────────────────── */
@@ -400,7 +468,7 @@ function renderScoreboard(){
       if(vt) return `<span class="w-6 h-6 rounded-full border border-white/15 text-white/25 flex items-center justify-center"><span class="material-symbols-outlined text-[13px]">close</span></span>`;
       return `<span class="w-6 h-6 rounded-full border border-dashed border-white/20 text-white/30 flex items-center justify-center font-sora text-[10px]">${v.ini}</span>`;
     }).join('');
-    const full=score>=3;
+    const full=score>=PERSONAS;
     return `<div class="glass-panel rounded-xl p-3.5 flex items-center gap-3 ${full?'neon-glow-primary border-primary/40':''}">
       <span class="font-mono text-xs text-on-surface-variant w-7 text-center">${medal(i)||(i+1)}</span>
       <div class="flex-1 min-w-0">
@@ -412,7 +480,7 @@ function renderScoreboard(){
     </div>`;
   }).join('');
   // kendi repertuvarım
-  if(me){
+  if(me && me!=='orkestra'){
     document.getElementById('own-rep-title').textContent=`${VOCALS[me].name} — Kendi Repertuvarın`;
     document.getElementById('own-rep-list').innerHTML=SONGS.filter(s=>s.o.includes(me)).map(s=>{
       const others=votes.filter(v=>v.song_id===s.id&&v.liked&&!s.o.includes(v.voter)).map(v=>VOCALS[v.voter].name);
@@ -425,7 +493,8 @@ function renderScoreboard(){
 }
 
 /* ── BAŞLAT ───────────────────────────────────────── */
-renderProfiles(); updateHeader();
-if(me){ loadVotes().then(()=>{ buildDeck(); renderDeck(); showScreen('oylama'); }); }
+renderProfiles(); updateHeader(); flushQueue();
+if(me && VOCALS[me]){ showScreen('oylama'); initDeck(); }
+else { me=null; }
 </script>
 </body></html>
