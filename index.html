@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html class="dark" lang="tr"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" name="viewport"/>
+<title>REPERTUVAR</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Hanken+Grotesk:wght@400;600&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<script>
+tailwind.config = {
+  darkMode: "class",
+  theme: { extend: {
+    colors: {
+      "background":"#10131a","surface":"#10131a","surface-container":"#1d2026","surface-container-high":"#272a31",
+      "surface-variant":"#32353c","on-surface":"#e1e2eb","on-surface-variant":"#d4c0d7","outline":"#9d8ba0",
+      "primary":"#ecb2ff","primary-fixed":"#f8d8ff","primary-container":"#bd00ff",
+      "secondary":"#7df4ff","secondary-bright":"#00eefc",
+      "tertiary":"#ffb1c3","tertiary-container":"#e7006e"
+    },
+    fontFamily: { sora:["Sora"], body:["Hanken Grotesk"], mono:["JetBrains Mono"] }
+  } }
+}
+</script>
+<style>
+  body { background:#10131a; color:#e1e2eb; overflow-x:hidden; overscroll-behavior-y:none; -webkit-tap-highlight-color:transparent; }
+  .glass-panel { background:rgba(255,255,255,0.08); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); border:1px solid rgba(255,255,255,0.15); }
+  .neon-glow-primary { box-shadow:0 0 24px rgba(236,178,255,0.3); }
+  .neon-glow-secondary { box-shadow:0 0 24px rgba(125,244,255,0.3); }
+  .neon-glow-tertiary { box-shadow:0 0 24px rgba(255,177,195,0.3); }
+  .material-symbols-outlined { font-variation-settings:'FILL' 0; }
+  .msf { font-variation-settings:'FILL' 1 !important; }
+  .screen { position:fixed; inset:0; display:flex; flex-direction:column; background:#10131a; transition:transform .45s cubic-bezier(.32,.72,.35,1), opacity .45s; }
+  .screen.off-r { transform:translateX(100%); opacity:0; pointer-events:none; }
+  .screen.off-l { transform:translateX(-100%); opacity:0; pointer-events:none; }
+  .swipe-card { touch-action:none; will-change:transform; user-select:none; -webkit-user-select:none; }
+  .swipe-card.spring { transition:transform .3s cubic-bezier(.175,.885,.32,1.275); }
+  .swipe-card.fly { transition:transform .4s ease-out, opacity .4s ease-out; opacity:0; }
+  @keyframes bounce { 0%,100%{height:4px} 50%{height:16px} }
+  .vbar { animation:bounce 1s infinite ease-in-out; }
+  .vbar:nth-child(1){animation-delay:0s}.vbar:nth-child(2){animation-delay:.2s}.vbar:nth-child(3){animation-delay:.4s}.vbar:nth-child(4){animation-delay:.1s}
+  @keyframes popin { from{transform:scale(.92);opacity:0} to{transform:scale(1);opacity:1} }
+  .popin { animation:popin .35s cubic-bezier(.175,.885,.32,1.275) both; }
+  .no-scrollbar::-webkit-scrollbar{display:none} .no-scrollbar{scrollbar-width:none}
+</style>
+</head>
+<body class="antialiased font-body">
+
+<!-- ═══ HEADER (ortak) ═══ -->
+<header class="fixed top-0 w-full z-[60] bg-surface-container/40 backdrop-blur-2xl border-b border-white/10 shadow-[0_0_24px_rgba(189,0,255,0.15)] flex justify-between items-center px-5 h-16" style="padding-top:env(safe-area-inset-top)">
+  <button id="btn-profile" class="w-9 h-9 rounded-full bg-surface-variant flex items-center justify-center text-on-surface-variant" onclick="onProfileTap()">
+    <span class="material-symbols-outlined text-[20px]" id="header-avatar-icon">person</span>
+    <span id="header-avatar-txt" class="hidden font-sora text-sm font-bold"></span>
+  </button>
+  <h1 class="font-sora text-2xl font-extrabold tracking-tighter text-primary-fixed uppercase">Repertuvar</h1>
+  <button class="w-9 h-9 flex items-center justify-center text-primary" onclick="showScreen('scoreboard')">
+    <span class="material-symbols-outlined msf">leaderboard</span>
+  </button>
+</header>
+
+<!-- ═══ EKRAN 1: KİMSİN? ═══ -->
+<div class="screen z-40" id="screen-secim">
+  <main class="flex-1 flex flex-col justify-center items-center px-5 pt-16 pb-8 gap-8 relative overflow-hidden">
+    <div class="absolute inset-0 bg-gradient-to-b from-primary-container/10 to-transparent pointer-events-none"></div>
+    <div class="text-center z-10">
+      <h2 class="font-sora text-[28px] leading-[34px] font-bold text-white">Kimsin?</h2>
+      <p class="text-on-surface-variant mt-1">Profilini seç, diğerlerinin şarkılarını oyla.</p>
+    </div>
+    <div class="w-full max-w-sm space-y-4 z-10" id="profil-listesi"></div>
+  </main>
+</div>
+
+<!-- ═══ EKRAN 2: OYLAMA ═══ -->
+<div class="screen z-30 off-r" id="screen-oylama">
+  <main class="flex-1 relative w-full h-full overflow-hidden pt-16" style="padding-top:calc(4rem + env(safe-area-inset-top))">
+    <div class="flex items-center justify-between px-5 pt-3 pb-1">
+      <p class="font-mono text-xs text-on-surface-variant" id="deck-progress"></p>
+      <button class="font-mono text-xs text-secondary flex items-center gap-1" onclick="undoSwipe()" id="btn-undo" style="visibility:hidden">
+        <span class="material-symbols-outlined text-[16px]">undo</span>GERİ AL
+      </button>
+    </div>
+    <div class="relative w-full flex items-center justify-center px-5" id="card-deck" style="height:calc(100% - 10.5rem)"></div>
+    <div class="absolute bottom-6 left-0 w-full px-8 flex justify-center items-center gap-10 z-40" style="padding-bottom:env(safe-area-inset-bottom)">
+      <button class="w-16 h-16 rounded-full glass-panel flex items-center justify-center text-tertiary border-tertiary/50 active:scale-90 transition-all" onclick="swipeByButton(false)">
+        <span class="material-symbols-outlined text-[32px]">close</span>
+      </button>
+      <button class="w-16 h-16 rounded-full glass-panel flex items-center justify-center text-primary border-primary/50 active:scale-90 transition-all" onclick="swipeByButton(true)">
+        <span class="material-symbols-outlined text-[32px] msf">favorite</span>
+      </button>
+    </div>
+  </main>
+</div>
+
+<!-- ═══ EKRAN 3: SCOREBOARD ═══ -->
+<div class="screen z-20 off-r" id="screen-scoreboard">
+  <main class="flex-1 overflow-y-auto no-scrollbar px-5 pb-10" style="padding-top:calc(4.5rem + env(safe-area-inset-top))">
+    <div class="flex items-center justify-between mb-1">
+      <h2 class="font-sora text-2xl font-bold text-white">Skor Tablosu</h2>
+      <button class="text-on-surface-variant flex items-center gap-1 font-mono text-xs" onclick="loadVotes().then(renderScoreboard)">
+        <span class="material-symbols-outlined text-[18px]">refresh</span>YENİLE
+      </button>
+    </div>
+    <p class="text-on-surface-variant text-sm mb-4">Herkesin en çok söylemek istediği şarkılar.</p>
+    <div id="oylama-durumu" class="glass-panel rounded-xl p-3 mb-5 flex justify-around"></div>
+    <div id="score-list" class="space-y-3"></div>
+    <div class="mt-8 mb-2">
+      <h3 class="font-sora text-lg font-bold text-white mb-3" id="own-rep-title"></h3>
+      <div id="own-rep-list" class="glass-panel rounded-xl divide-y divide-white/10"></div>
+    </div>
+  </main>
+</div>
+
+<!-- ═══ TOAST ═══ -->
+<div id="toast" class="fixed left-1/2 -translate-x-1/2 bottom-24 z-[70] glass-panel rounded-full px-4 py-2 text-sm text-on-surface opacity-0 transition-opacity pointer-events-none"></div>
+
+<script>
+/* ── VERİ ─────────────────────────────────────────── */
+const VOCALS = {
+  tugce:  { name:'Tuğçe',  ini:'T', color:'#ecb2ff', glow:'neon-glow-primary',  txt:'text-primary',  border:'border-primary',  grad:'from-[#bd00ff]/60 via-[#520071]/40' },
+  mevsim: { name:'Mevsim', ini:'M', color:'#7df4ff', glow:'neon-glow-secondary', txt:'text-secondary', border:'border-secondary', grad:'from-[#00b8c4]/60 via-[#004f54]/40' },
+  zeynep: { name:'Zeynep', ini:'Z', color:'#ffb1c3', glow:'neon-glow-tertiary', txt:'text-tertiary', border:'border-tertiary', grad:'from-[#e7006e]/60 via-[#66002c]/40' }
+};
+const SONGS = [
+  {id:'son-arzum', t:'Son Arzum', o:['tugce','zeynep']},
+  {id:'bodrum', t:'Bodrum', o:['tugce']},
+  {id:'beni-al', t:'Beni Al', k:'F#m', n:'Ankara Echoes', o:['tugce','mevsim']},
+  {id:'kiralik-ask', t:'Kiralık Aşk', o:['tugce']},
+  {id:'her-mevsim-yazim', t:'Her Mevsim Yazım', o:['tugce']},
+  {id:'kts', t:'KTS', o:['tugce']},
+  {id:'salla', t:'Salla', o:['tugce','zeynep']},
+  {id:'ruya', t:'Rüya', o:['tugce']},
+  {id:'bambaska-biri', t:'Bambaşka Biri', o:['tugce','zeynep']},
+  {id:'sevdik-sevdalandik', t:'Sevdik Sevdalandık', o:['tugce']},
+  {id:'dagilmak-istiyorum', t:'Dağılmak İstiyorum', o:['tugce']},
+  {id:'cumlelerim', t:'Cümlelerim', o:['tugce']},
+  {id:'iltimas', t:'İltimas', o:['tugce','zeynep']},
+  {id:'teni-tenime', t:'Teni Tenime', o:['tugce']},
+  {id:'sebastian', t:'Sebastian', o:['tugce']},
+  {id:'mevsim-bahar', t:'Mevsim Bahar', o:['tugce']},
+  {id:'gozyaslarim-anlatir', t:'Gözyaşlarım Anlatır', o:['tugce']},
+  {id:'tuttu-firlatti', t:'Tuttu Fırlattı', o:['tugce']},
+  {id:'tavla', t:'Tavla', o:['tugce']},
+  {id:'aldatildik', t:'Aldatıldık', o:['tugce']},
+  {id:'yalnizlik-senfonisi', t:'Yalnızlık Senfonisi', k:'Am', o:['zeynep','mevsim']},
+  {id:'gum-gum', t:'Güm Güm', o:['zeynep']},
+  {id:'sopa', t:'Sopa', k:'Dm', o:['zeynep','mevsim']},
+  {id:'bu-boyle', t:'Bu Böyle', o:['zeynep']},
+  {id:'uslanmiyor-bu', t:'Uslanmıyor Bu', k:'Cm', o:['zeynep','mevsim']},
+  {id:'harika', t:'Harika', o:['zeynep']},
+  {id:'cak-bir-selam', t:'Çak Bir Selam', o:['zeynep']},
+  {id:'istanbul', t:'İstanbul', o:['zeynep']},
+  {id:'seviyorum-sevmiyorum', t:'Seviyorum Sevmiyorum', o:['zeynep']},
+  {id:'mor-yazma', t:'Mor Yazma', o:['zeynep']},
+  {id:'bir-tanecik-askim', t:'Bir Tanecik Aşkım', o:['zeynep']},
+  {id:'doktor', t:'Doktor', o:['zeynep']},
+  {id:'sans-melegim', t:'Şans Meleğim', k:'Em', o:['zeynep','mevsim']},
+  {id:'kandirdim', t:'Kandırdım', k:'Em', o:['zeynep','mevsim']},
+  {id:'ben-boyleyim', t:'Ben Böyleyim', o:['zeynep']},
+  {id:'bu-ask-fazla-sana', t:'Bu Aşk Fazla Sana', k:'Am', o:['zeynep','mevsim']},
+  {id:'asktan-ne-haber', t:'Aşktan Ne Haber', o:['zeynep']},
+  {id:'yasanacaksa-yasanacak', t:'Yaşanacaksa Yaşanacak', o:['zeynep']},
+  {id:'baska-bahar', t:'Başka Bahar', o:['zeynep']},
+  {id:'sil-bastan', t:'Sil Baştan', o:['zeynep']},
+  {id:'yaz-yaz-yaz', t:'Yaz Yaz Yaz', k:'Fm', o:['zeynep','mevsim']},
+  {id:'kaybolan-yillar', t:'Kaybolan Yıllar', o:['zeynep']},
+  {id:'vay', t:'Vay', o:['zeynep']},
+  {id:'masum-degiliz', t:'Masum Değiliz', o:['zeynep']},
+  {id:'istanbul-istanbul-olali', t:'İstanbul İstanbul Olalı', o:['zeynep']},
+  {id:'olsun', t:'Olsun', o:['zeynep']},
+  {id:'iyilesiyorum', t:'İyileşiyorum', o:['zeynep']},
+  {id:'vur-yuregim', t:'Vur Yüreğim', o:['zeynep']},
+  {id:'acik-adres', t:'Açık Adres', o:['zeynep']},
+  {id:'yalnizlik-kus', t:'Yalnızlık Kuş', o:['zeynep']},
+  {id:'mey', t:'Mey', o:['zeynep']},
+  {id:'dusunme-hic', t:'Düşünme Hiç', o:['zeynep']},
+  {id:'erkekler-aglamaz', t:'Erkekler Ağlamaz', o:['zeynep']},
+  {id:'yanki', t:'Yankı', o:['zeynep']},
+  {id:'saygimdan', t:'Saygımdan', o:['zeynep']},
+  {id:'bir-bela', t:'Bir Bela', o:['zeynep']},
+  {id:'napardim-bilmem', t:'Napardım Bilmem', o:['zeynep']},
+  {id:'bu-gece', t:'Bu Gece', o:['zeynep']},
+  {id:'kucucugum', t:'Küçücüğüm', o:['zeynep']},
+  {id:'hileli', t:'Hileli', o:['zeynep']},
+  {id:'ayy', t:'Ayy', o:['zeynep']},
+  {id:'seyre-dursun-ask', t:'Seyre Dursun Aşk', o:['zeynep']},
+  {id:'ben-bazen', t:'Ben Bazen', o:['zeynep']},
+  {id:'kirmizi', t:'Kırmızı', o:['zeynep']},
+  {id:'askin-atesi', t:'Aşkın Ateşi', o:['zeynep']},
+  {id:'reverans-potpori', t:'Reverans / Nerdesin Aşkım / Bundan Sonra', n:'Potpori', o:['zeynep']},
+  {id:'yalan-hepsi', t:'Yalan Hepsi', o:['zeynep']},
+  {id:'manifest-medley', t:'Manifest / Amatör / Toz Pembe / Hileli', n:'Medley · Bb–Dm–G', o:['mevsim']},
+  {id:'ask-her-seyi-affeder-mi', t:'Aşk Her Şeyi Affeder Mi', k:'Fm', o:['mevsim']},
+  {id:'ben-sana-hala-asigim', t:'Ben Sana Hala Aşığım', k:'Am', o:['mevsim']},
+  {id:'ask', t:'Aşk', k:'Am', o:['mevsim']},
+  {id:'tukendim-ben', t:'Tükendim Ben', k:'Gm', o:['mevsim']},
+  {id:'yasandi-bitti', t:'Yaşandı Bitti', k:'Em', o:['mevsim']},
+  {id:'hovarda', t:'Hovarda', k:'Em', o:['mevsim']},
+  {id:'olurum-sana', t:'Ölürüm Sana', k:'Mi Kürdi', o:['mevsim']},
+  {id:'tutamiyorum-zamani', t:'Tutamıyorum Zamanı', k:'Dm', o:['mevsim']},
+  {id:'mesafe', t:'Mesafe', k:'Dm', o:['mevsim']}
+];
+const SONG_BY_ID = Object.fromEntries(SONGS.map(s=>[s.id,s]));
+
+/* ── DURUM ────────────────────────────────────────── */
+const API_BASE = 'https://n8n.srv1137131.hstgr.cloud/webhook/repertuvar';
+let me = localStorage.getItem('rep_kimlik') || null;
+let votes = [];            // [{voter, song_id, liked}]
+let deck = [];             // oylanacak şarkılar
+let lastVote = null;
+let currentScreen = 'secim';
+
+/* ── YARDIMCILAR ──────────────────────────────────── */
+function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.style.opacity='1'; clearTimeout(t._h); t._h=setTimeout(()=>t.style.opacity='0',2200); }
+function myVote(songId){ return votes.find(v=>v.voter===me && v.song_id===songId); }
+function setVoteLocal(voter,songId,liked){
+  const i=votes.findIndex(v=>v.voter===voter&&v.song_id===songId);
+  if(i>=0) votes[i].liked=liked; else votes.push({voter, song_id:songId, liked});
+}
+async function loadVotes(){
+  try{
+    const r=await fetch(API_BASE+'-oylar',{cache:'no-store'});
+    const j=await r.json();
+    votes = (j.votes||[]).map(v=>({voter:v.voter, song_id:v.song_id, liked:v.liked===true||v.liked==='true'}));
+  }catch(e){ toast('Bağlantı sorunu — oylar yüklenemedi'); }
+}
+function sendVote(songId,liked){
+  setVoteLocal(me,songId,liked);
+  fetch(API_BASE+'-oy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({voter:me,song_id:songId,liked})})
+    .catch(()=>fetch(API_BASE+'-oy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({voter:me,song_id:songId,liked})}))
+    .catch(()=>toast('Oy gönderilemedi — internetini kontrol et'));
+}
+
+/* ── EKRAN GEÇİŞİ ─────────────────────────────────── */
+function showScreen(name){
+  const order=['secim','oylama','scoreboard'];
+  const map={secim:'screen-secim',oylama:'screen-oylama',scoreboard:'screen-scoreboard'};
+  order.forEach(n=>{
+    const el=document.getElementById(map[n]);
+    el.classList.remove('off-l','off-r');
+    if(n===name){ el.style.zIndex=50; }
+    else { el.style.zIndex=20; el.classList.add(order.indexOf(n)<order.indexOf(name)?'off-l':'off-r'); }
+  });
+  currentScreen=name;
+  if(name==='scoreboard'){ renderScoreboard(); loadVotes().then(renderScoreboard); }
+}
+function onProfileTap(){
+  if(currentScreen==='secim') return;
+  if(confirm('Profil değiştirmek istiyor musun?')){ me=null; localStorage.removeItem('rep_kimlik'); updateHeader(); showScreen('secim'); }
+}
+function updateHeader(){
+  const ic=document.getElementById('header-avatar-icon'), tx=document.getElementById('header-avatar-txt'), b=document.getElementById('btn-profile');
+  if(me){ ic.classList.add('hidden'); tx.classList.remove('hidden'); tx.textContent=VOCALS[me].ini; tx.style.color=VOCALS[me].color; b.style.borderColor=VOCALS[me].color; b.style.borderWidth='2px'; }
+  else { ic.classList.remove('hidden'); tx.classList.add('hidden'); b.style.borderWidth='0'; }
+}
+
+/* ── EKRAN 1: PROFİL SEÇİMİ ───────────────────────── */
+function renderProfiles(){
+  const wrap=document.getElementById('profil-listesi');
+  wrap.innerHTML=Object.entries(VOCALS).map(([id,v])=>`
+    <button class="w-full group" onclick="pickProfile('${id}')">
+      <div class="glass-panel rounded-xl p-4 flex items-center gap-4 hover:${v.glow} active:scale-[0.98] transition-all duration-300">
+        <div class="w-16 h-16 rounded-full border-2 ${v.border} bg-gradient-to-br ${v.grad} to-transparent flex items-center justify-center">
+          <span class="font-sora text-2xl font-extrabold" style="color:${v.color}">${v.ini}</span>
+        </div>
+        <div class="flex-1 text-left">
+          <h3 class="font-sora text-2xl font-semibold text-on-surface">${v.name}</h3>
+          <p class="font-mono text-xs ${v.txt}">${SONGS.filter(s=>s.o.includes(id)).length} şarkı · Vokal</p>
+        </div>
+        <span class="material-symbols-outlined text-on-surface-variant">chevron_right</span>
+      </div>
+    </button>`).join('');
+}
+async function pickProfile(id){
+  me=id; localStorage.setItem('rep_kimlik',id); updateHeader();
+  toast(`Hoş geldin ${VOCALS[id].name}! 🎤`);
+  await loadVotes();
+  buildDeck(); renderDeck(); showScreen('oylama');
+}
+
+/* ── EKRAN 2: DESTE ───────────────────────────────── */
+function buildDeck(){
+  const voted=new Set(votes.filter(v=>v.voter===me).map(v=>v.song_id));
+  deck=SONGS.filter(s=>!s.o.includes(me) && !voted.has(s.id));
+}
+function deckTotal(){ return SONGS.filter(s=>!s.o.includes(me)).length; }
+function ownerChips(s){
+  return s.o.map(o=>`<span class="px-3 py-1 rounded-full border ${VOCALS[o].border} ${VOCALS[o].txt} font-mono text-xs bg-white/5 backdrop-blur-md">${VOCALS[o].name}</span>`).join('');
+}
+function renderDeck(){
+  const dk=document.getElementById('card-deck');
+  const done=deckTotal()-deck.length;
+  document.getElementById('deck-progress').textContent=`${done} / ${deckTotal()} OYLANDI`;
+  document.getElementById('btn-undo').style.visibility=lastVote?'visible':'hidden';
+  if(!deck.length){
+    dk.innerHTML=`<div class="glass-panel rounded-[24px] p-8 text-center max-w-sm popin">
+      <div class="flex items-end justify-center gap-1 h-6 mb-4"><div class="w-1 bg-secondary rounded-full vbar"></div><div class="w-1 bg-secondary rounded-full vbar"></div><div class="w-1 bg-secondary rounded-full vbar"></div><div class="w-1 bg-secondary rounded-full vbar"></div></div>
+      <h2 class="font-sora text-2xl font-bold text-white mb-2">Hepsi bu kadar! 🎉</h2>
+      <p class="text-on-surface-variant mb-6">Tüm şarkıları oyladın. Bakalım ortak repertuvar ne diyor…</p>
+      <button class="glass-panel rounded-full px-6 py-3 text-primary font-sora font-semibold neon-glow-primary" onclick="showScreen('scoreboard')">Skor Tablosu</button>
+    </div>`;
+    return;
+  }
+  dk.innerHTML='';
+  deck.slice(0,2).reverse().forEach((s,idx,arr)=>{
+    const top = idx===arr.length-1;
+    const owner=s.o.find(o=>o!==me)||s.o[0]; const v=VOCALS[owner];
+    const el=document.createElement('div');
+    el.className=`swipe-card absolute w-full max-w-sm rounded-[24px] overflow-hidden glass-panel ${top?'z-30 '+v.glow:'z-20 scale-[0.95] translate-y-4 opacity-80'}`;
+    el.style.height='min(62vh, 520px)';
+    el.innerHTML=`
+      <div class="absolute inset-0 bg-gradient-to-t ${v.grad} to-transparent"></div>
+      <div class="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-transparent"></div>
+      <div class="absolute top-6 left-6 px-3 py-1.5 rounded-lg border-2 border-primary text-primary font-sora font-extrabold text-xl rotate-[-12deg] opacity-0 badge-like bg-background/60">SÖYLERİZ 💜</div>
+      <div class="absolute top-6 right-6 px-3 py-1.5 rounded-lg border-2 border-tertiary text-tertiary font-sora font-extrabold text-xl rotate-[12deg] opacity-0 badge-nope bg-background/60">GEÇ ✕</div>
+      <div class="absolute bottom-0 left-0 w-full p-6 flex flex-col gap-4">
+        <div class="flex items-center justify-between">
+          <div class="flex gap-2 flex-wrap">${ownerChips(s)}</div>
+          <div class="flex items-end gap-1 h-6"><div class="w-1 rounded-full vbar" style="background:${v.color}"></div><div class="w-1 rounded-full vbar" style="background:${v.color}"></div><div class="w-1 rounded-full vbar" style="background:${v.color}"></div><div class="w-1 rounded-full vbar" style="background:${v.color}"></div></div>
+        </div>
+        <div>
+          <h2 class="font-sora text-[26px] leading-[32px] font-bold text-white">${s.t}</h2>
+          <p class="text-on-surface-variant">${[s.k?('Ton: '+s.k):null, s.n].filter(Boolean).join(' · ')||'&nbsp;'}</p>
+        </div>
+        <div class="flex items-center gap-2 text-on-surface-variant opacity-80">
+          <div class="w-5 h-5 rounded-full border flex items-center justify-center font-sora text-[10px] font-bold" style="border-color:${v.color};color:${v.color}">${v.ini}</div>
+          <span class="font-mono text-xs">${s.o.map(o=>VOCALS[o].name).join(' & ')} listesinden</span>
+        </div>
+      </div>`;
+    dk.appendChild(el);
+    if(top) attachSwipe(el, s);
+  });
+}
+function attachSwipe(el, song){
+  let sx=0, sy=0, dx=0, dy=0, dragging=false;
+  const like=el.querySelector('.badge-like'), nope=el.querySelector('.badge-nope');
+  el.addEventListener('pointerdown',e=>{ dragging=true; sx=e.clientX; sy=e.clientY; el.classList.remove('spring'); el.setPointerCapture(e.pointerId); });
+  el.addEventListener('pointermove',e=>{
+    if(!dragging) return;
+    dx=e.clientX-sx; dy=e.clientY-sy;
+    el.style.transform=`translate(${dx}px, ${dy*0.4}px) rotate(${dx*0.05}deg)`;
+    like.style.opacity=Math.min(1,Math.max(0,dx/80)); nope.style.opacity=Math.min(1,Math.max(0,-dx/80));
+  });
+  const end=()=>{
+    if(!dragging) return; dragging=false;
+    const th=Math.min(window.innerWidth*0.28, 140);
+    if(dx>th) flyOut(el,song,true);
+    else if(dx<-th) flyOut(el,song,false);
+    else { el.classList.add('spring'); el.style.transform=''; like.style.opacity=0; nope.style.opacity=0; }
+  };
+  el.addEventListener('pointerup',end); el.addEventListener('pointercancel',end);
+}
+function flyOut(el,song,liked){
+  el.classList.add('fly');
+  el.style.transform=`translate(${liked?1:-1}*150%, 0)`;
+  el.style.transform=`translateX(${liked?150:-150}%) rotate(${liked?15:-15}deg)`;
+  lastVote={song_id:song.id};
+  sendVote(song.id,liked);
+  deck=deck.filter(s=>s.id!==song.id);
+  if(navigator.vibrate) navigator.vibrate(15);
+  setTimeout(renderDeck, 250);
+}
+function swipeByButton(liked){
+  if(!deck.length) return;
+  const el=document.querySelector('#card-deck .swipe-card.z-30');
+  if(el) flyOut(el, deck[0], liked);
+}
+function undoSwipe(){
+  if(!lastVote) return;
+  const s=SONG_BY_ID[lastVote.song_id];
+  votes=votes.filter(v=>!(v.voter===me&&v.song_id===s.id));
+  deck.unshift(s); lastVote=null;
+  toast(`"${s.t}" desteye geri döndü — tekrar oyla`);
+  renderDeck();
+}
+
+/* ── EKRAN 3: SCOREBOARD ──────────────────────────── */
+function songScore(s){
+  const extra=votes.filter(v=>v.song_id===s.id && v.liked && !s.o.includes(v.voter)).length;
+  return s.o.length+extra;
+}
+function renderScoreboard(){
+  // oylama durumu
+  const durum=document.getElementById('oylama-durumu');
+  durum.innerHTML=Object.entries(VOCALS).map(([id,v])=>{
+    const total=SONGS.filter(s=>!s.o.includes(id)).length;
+    const done=new Set(votes.filter(x=>x.voter===id).map(x=>x.song_id)).size;
+    return `<div class="text-center">
+      <p class="font-sora font-bold" style="color:${v.color}">${v.name}</p>
+      <p class="font-mono text-xs text-on-surface-variant">${done}/${total} oyladı</p>
+    </div>`;
+  }).join('');
+  // sıralı liste
+  const ranked=[...SONGS].map(s=>({s,score:songScore(s)})).sort((a,b)=>b.score-a.score||a.s.t.localeCompare(b.s.t,'tr'));
+  const medal=i=>i===0?'🥇':i===1?'🥈':i===2?'🥉':'';
+  document.getElementById('score-list').innerHTML=ranked.map(({s,score},i)=>{
+    const states=Object.keys(VOCALS).map(id=>{
+      const v=VOCALS[id];
+      if(s.o.includes(id)) return `<span class="w-6 h-6 rounded-full flex items-center justify-center font-sora text-[10px] font-bold" style="background:${v.color};color:#10131a" title="${v.name}'nin listesinde">${v.ini}</span>`;
+      const vt=votes.find(x=>x.voter===id&&x.song_id===s.id);
+      if(vt&&vt.liked) return `<span class="w-6 h-6 rounded-full border flex items-center justify-center" style="border-color:${v.color};color:${v.color}"><span class="material-symbols-outlined msf text-[13px]">favorite</span></span>`;
+      if(vt) return `<span class="w-6 h-6 rounded-full border border-white/15 text-white/25 flex items-center justify-center"><span class="material-symbols-outlined text-[13px]">close</span></span>`;
+      return `<span class="w-6 h-6 rounded-full border border-dashed border-white/20 text-white/30 flex items-center justify-center font-sora text-[10px]">${v.ini}</span>`;
+    }).join('');
+    const full=score>=3;
+    return `<div class="glass-panel rounded-xl p-3.5 flex items-center gap-3 ${full?'neon-glow-primary border-primary/40':''}">
+      <span class="font-mono text-xs text-on-surface-variant w-7 text-center">${medal(i)||(i+1)}</span>
+      <div class="flex-1 min-w-0">
+        <p class="font-sora font-semibold text-on-surface truncate">${s.t}</p>
+        <p class="font-mono text-[11px] text-on-surface-variant truncate">${[s.k?('Ton: '+s.k):null,s.n].filter(Boolean).join(' · ')||s.o.map(o=>VOCALS[o].name).join(' & ')}</p>
+      </div>
+      <div class="flex gap-1.5">${states}</div>
+      <span class="font-sora font-extrabold text-lg w-8 text-right ${full?'text-primary':'text-on-surface-variant'}">${score}</span>
+    </div>`;
+  }).join('');
+  // kendi repertuvarım
+  if(me){
+    document.getElementById('own-rep-title').textContent=`${VOCALS[me].name} — Kendi Repertuvarın`;
+    document.getElementById('own-rep-list').innerHTML=SONGS.filter(s=>s.o.includes(me)).map(s=>{
+      const others=votes.filter(v=>v.song_id===s.id&&v.liked&&!s.o.includes(v.voter)).map(v=>VOCALS[v.voter].name);
+      return `<div class="px-4 py-3 flex items-center justify-between">
+        <div><p class="text-on-surface">${s.t}</p>${s.k?`<p class="font-mono text-[11px] text-on-surface-variant">Ton: ${s.k}</p>`:''}</div>
+        ${others.length?`<span class="font-mono text-[11px] text-primary">+ ${others.join(', ')} ♥</span>`:''}
+      </div>`;
+    }).join('');
+  } else { document.getElementById('own-rep-title').textContent=''; document.getElementById('own-rep-list').innerHTML=''; }
+}
+
+/* ── BAŞLAT ───────────────────────────────────────── */
+renderProfiles(); updateHeader();
+if(me){ loadVotes().then(()=>{ buildDeck(); renderDeck(); showScreen('oylama'); }); }
+</script>
+</body></html>
