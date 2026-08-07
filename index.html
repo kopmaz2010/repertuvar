@@ -47,6 +47,17 @@ tailwind.config = {
 </style>
 </head>
 <body class="antialiased font-body">
+<script>
+window.onerror = function(msg, src, line){
+  try{
+    var b=document.getElementById('errbar');
+    if(!b){ b=document.createElement('div'); b.id='errbar';
+      b.style.cssText='position:fixed;top:0;left:0;right:0;z-index:9999;background:#93000a;color:#ffdad6;font:11px/1.4 monospace;padding:8px 12px;word-break:break-all;';
+      document.body.appendChild(b); }
+    b.textContent='⚠ Hata: '+msg+' (satır '+line+') — bu ekranın fotoğrafını gruba at';
+  }catch(e){}
+};
+</script>
 
 <!-- ═══ HEADER (ortak) ═══ -->
 <header class="fixed top-0 w-full z-[60] bg-surface-container/40 backdrop-blur-2xl border-b border-white/10 shadow-[0_0_24px_rgba(189,0,255,0.15)] flex justify-between items-center px-5 h-16" style="padding-top:env(safe-area-inset-top)">
@@ -69,6 +80,10 @@ tailwind.config = {
       <p class="text-on-surface-variant mt-1">Profilini seç, diğerlerinin şarkılarını oyla.</p>
     </div>
     <div class="w-full max-w-sm space-y-4 z-10" id="profil-listesi"></div>
+    <div class="z-10 flex items-center gap-4">
+      <button class="font-mono text-[11px] text-on-surface-variant underline underline-offset-4" onclick="importCode()">Oy kodu gir</button>
+      <span class="font-mono text-[11px] text-white/25">v3</span>
+    </div>
   </main>
 </div>
 
@@ -271,6 +286,39 @@ function sendVote(songId,liked){
     .catch(function(){ queuePush(p); toast('Bağlantı zayıf — oyun telefonda saklandı, otomatik gönderilecek'); });
 }
 window.addEventListener('online', function(){ flushQueue(); });
+/* ── OY KODU (WhatsApp yedek kanalı) ──────────────── */
+function myVotesCode(){
+  var mine=votes.filter(function(v){ return v.voter===me; }).map(function(v){ return {s:v.song_id, l:v.liked?1:0}; });
+  if(!mine.length) return null;
+  return 'REP1|'+me+'|'+btoa(unescape(encodeURIComponent(JSON.stringify(mine))));
+}
+function shareVotes(){
+  var code=myVotesCode();
+  if(!code){ toast('Paylaşılacak oy yok — önce birkaç şarkı oyla'); return; }
+  var msg='Repertuvar oy kodum (siteye "Oy kodu gir" ile yapıştırın):\n\n'+code;
+  if(navigator.share){ navigator.share({text:msg}).catch(function(){}); return; }
+  window.open('https://wa.me/?text='+encodeURIComponent(msg),'_blank');
+}
+function importCode(){
+  var raw=prompt('Oy kodunu yapıştır (REP1| ile başlar):');
+  if(!raw) return;
+  var m=raw.trim().match(/REP1\|([a-z]+)\|([A-Za-z0-9+/=]+)/);
+  if(!m){ toast('Kod çözülemedi — tamamını kopyaladığından emin ol'); return; }
+  var voter=m[1], arr;
+  try{ arr=JSON.parse(decodeURIComponent(escape(atob(m[2])))); }catch(e){ toast('Kod çözülemedi'); return; }
+  toast('Aktarılıyor… ('+arr.length+' oy)');
+  (async function(){
+    var n=0;
+    for(var i=0;i<arr.length;i++){
+      try{
+        var r=await fetchTimeout(API_BASE+'-oy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({voter:voter,song_id:arr[i].s,liked:!!arr[i].l})},12000);
+        if(r.ok) n++;
+      }catch(e){}
+    }
+    toast(n+'/'+arr.length+' oy aktarıldı ✓');
+    loadVotes();
+  })();
+}
 
 /* ── EKRAN GEÇİŞİ ─────────────────────────────────── */
 function showScreen(name){
@@ -333,7 +381,8 @@ function renderRetry(){
     <p class="text-on-surface-variant text-sm mb-6">İnternet bağlantını kontrol edip tekrar dene. Wi-Fi'da olmuyorsa mobil veriyle dene (ya da tersi).</p>
     <div class="flex flex-col gap-3">
       <button class="glass-panel rounded-full px-6 py-3 text-primary font-sora font-semibold neon-glow-primary" onclick="initDeck()">Tekrar Dene</button>
-      <button class="rounded-full px-6 py-2 text-on-surface-variant font-mono text-xs" onclick="buildDeck();renderDeck();toast('Çevrimdışı mod — oyların telefonda birikecek')">Yine de başla (çevrimdışı)</button>
+      <button class="glass-panel rounded-full px-6 py-3 text-secondary font-sora font-semibold" onclick="buildDeck();renderDeck();toast('Çevrimdışı mod — oyların telefonda birikir, sonunda WhatsApp koduyla gönderirsin')">Çevrimdışı Oyla</button>
+      <button class="rounded-full px-6 py-2 text-on-surface-variant font-mono text-xs" onclick="shareVotes()">Biriken oylarımı WhatsApp'la paylaş</button>
     </div>
   </div>`;
 }
@@ -363,6 +412,13 @@ function renderDeck(){
       <div class="flex items-end justify-center gap-1 h-6 mb-4"><div class="w-1 bg-secondary rounded-full vbar"></div><div class="w-1 bg-secondary rounded-full vbar"></div><div class="w-1 bg-secondary rounded-full vbar"></div><div class="w-1 bg-secondary rounded-full vbar"></div></div>
       <h2 class="font-sora text-2xl font-bold text-white mb-2">Hepsi bu kadar! 🎉</h2>
       <p class="text-on-surface-variant mb-6">Tüm şarkıları oyladın. Bakalım ortak repertuvar ne diyor…</p>
+      ${queueAll().length?`<div class="rounded-xl border border-tertiary/40 bg-tertiary/10 p-3 mb-5 text-left">
+        <p class="text-tertiary font-mono text-xs mb-2">⚠ ${queueAll().length} oy sunucuya gönderilemedi</p>
+        <div class="flex gap-2">
+          <button class="flex-1 glass-panel rounded-full px-3 py-2 text-secondary font-mono text-xs" onclick="flushQueue().then(function(){renderDeck()})">Tekrar Gönder</button>
+          <button class="flex-1 glass-panel rounded-full px-3 py-2 text-primary font-mono text-xs" onclick="shareVotes()">WhatsApp'la Paylaş</button>
+        </div>
+      </div>`:''}
       <button class="glass-panel rounded-full px-6 py-3 text-primary font-sora font-semibold neon-glow-primary" onclick="showScreen('scoreboard')">Skor Tablosu</button>
     </div>`;
     return;
